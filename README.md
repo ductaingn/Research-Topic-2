@@ -1,5 +1,4 @@
 # Implementation of *Improving Reliability by Risk-Averse Reinforcement Learning over Sub6GHz/mmWave Integrated Networks*
-***
 by Thi Ha Ly Dinh∗ , Megumi Kaneko∗ , Kenichi Kawamura† , Takatsune Moriyama† , Yasushi Takatori†
 
 **Discription:** This is a implementation of the paper using Python.
