@@ -2,9 +2,9 @@ import numpy as np
 import random as rd
 import matplotlib.pyplot as plt
 
-#the considered space has a width of 0.9 kilometers, a length of 0.9 kilometers
-length = 0.09
-width = 0.09
+#the considered space has a width of 90 meters, a length of 90 meters
+length = 90
+width = 90
 
 length_of_cell = 0.001
 number_of_area_per_row = 3
@@ -31,7 +31,7 @@ D = 8
 #initialize position of AP.
 #the AP was located at the central of the area
 #the position of each AP is the constant
-AP_POSITION=(0.045,0.045)
+AP_POSITION=(45,45)
 
 #the function calculates the distance to the nearest AP
 def distance_to_AP(pos_of_device):
@@ -57,7 +57,6 @@ def initialize_devices_pos():
 list_of_devices=initialize_devices_pos()
 
 #Path loss model
-# Chua doi distance ra met
 def path_loss_sub(distance):
     return 38.5 + 30*(np.log10(distance))
 def path_loss_mW_los(distance):
@@ -83,11 +82,11 @@ def generate_h_tilde(mu,sigma):
     h_tilde=complex(re,im)/np.sqrt(2)
     return h_tilde
 
-def generate_h_sub(device_index,h_tilde):
+def compute_h_sub(list_of_devices,device_index,h_tilde):
     h=h_tilde* pow(10,-path_loss_sub(distance_to_AP(list_of_devices[device_index]))/20.0)
     return h
 
-def generate_h_mW(device_index,eta,beta,h_tilde):
+def compute_h_mW(list_of_devices,device_index,eta,beta,h_tilde):
     path_loss
     #device blocked by obstacle
     if(device_index==2 or device_index==6):
@@ -95,23 +94,23 @@ def generate_h_mW(device_index,eta,beta,h_tilde):
     #device not blocked
     else:
         path_loss=path_loss_mW_los(distance_to_AP(list_of_devices[device_index]))
-    h=G(eta,beta)*h_tilde*pow(10,-path_loss/20)
+    h=G(eta,beta)*h_tilde*pow(10,-path_loss/20)*G_Rxk
     return h
 
 
 #return a matrix of channel coefficient h between device k and AP on subchannel n
-def initialize_devices_h_sub():
+def compute_devices_h_sub(list_of_devices,h_tilde):
     list_of_devices_h=np.matrix(np.zeros([NUM_OF_DEVICE,NUM_OF_SUB_CHANNEL]))
     for k in range(NUM_OF_DEVICE):
         for n in range (NUM_OF_SUB_CHANNEL):
-            list_of_devices_h[k,n]=generate_h_sub(k)
+            list_of_devices_h[k,n]=compute_h_sub(list_of_devices,k,h_tilde)
     return list_of_devices_h
 #return a matrix of channel coefficient h between device k and AP on beam m
-def initialize_devices_h_mW(eta,beta):
+def compute_devices_h_mW(list_of_devices,eta,beta,h_tilde):
     list_of_devices_h=np.matrix(np.zeros([NUM_OF_DEVICE,NUM_OF_SUB_CHANNEL]))
     for k in range(NUM_OF_DEVICE):
         for m in range (NUM_OF_BEAM):
-            list_of_devices_h[k,m]=generate_h_mW(k,eta,beta)
+            list_of_devices_h[k,m]=compute_h_mW(list_of_devices,k,eta,beta,h_tilde)
     return list_of_devices_h
 
 
@@ -174,20 +173,18 @@ plt.show(block=False)
 #suppose the transmit power not depend on application f of device k -> r_bkf depends on which device k of AP b is?
 #each frame has its r_bkf 
 #Simulating 10000 frames, determine the value of r_bkf in each frame
-NUM_OF_FRAME=100000
-list_of_r_from_0_to_t = [[] for i in range(NUM_OF_FRAME)]
-file = open("data_r.txt", "w")
+# def write_data(list_of_r_from_0_to_t,NUM_OF_FRAME):
+#     list_of_r_from_0_to_t = [[] for i in range(NUM_OF_FRAME)]
+#     file = open("data_r.txt", "w")
 
-for i in range(NUM_OF_FRAME):
-    file.writelines(' FRAME START! '.center(200,'=')+"\n")
-    for b in range(NUM_OF_AP):
-        for k in range(NUM_OF_DEVICE):
-            r_bkf = r(b, k, application_index=1)
-            file.write(f"{str(round(r_bkf,5)): <20}")
-            list_of_r_from_0_to_t[i].append(r_bkf)
-        file.writelines("\n")
-    file.writelines(' END OF FRAME! '.center(200,'=')+"\n\n")
+#     for i in range(NUM_OF_FRAME):
+#         file.writelines(' FRAME START! '.center(200,'=')+"\n")
+#         for b in range(NUM_OF_AP):
+#             for k in range(NUM_OF_DEVICE):
+#                 r_bkf = r(b, k, application_index=1)
+#                 file.write(f"{str(round(r_bkf,5)): <20}")
+#                 list_of_r_from_0_to_t[i].append(r_bkf)
+#             file.writelines("\n")
+#         file.writelines(' END OF FRAME! '.center(200,'=')+"\n\n")
 
-file.close()
-
-plt.show()
+#     file.close()
