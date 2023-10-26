@@ -21,8 +21,9 @@ NUM_OF_BEAM = 3
 P = pow(10,5/10)
 #Noise Power sigma^2 ~ -169dBm/Hz
 SIGMA_SQR = pow(10,-169/10)
-#Bandwidth W = 10MHz
-W = 10000000
+#Bandwidth W_Sub = 100MHz, W_mW = 1GHz
+W_SUB = 1e8
+W_MW = 1e9
 #Frame Duration T_s
 T = 1
 #Packet size D = 8 bit
@@ -84,18 +85,19 @@ def generate_h_tilde(mu,sigma):
 
 def compute_h_sub(list_of_devices,device_index,h_tilde):
     h=h_tilde* pow(10,-path_loss_sub(distance_to_AP(list_of_devices[device_index]))/20.0)
-    return h
+    return np.power(np.abs(h),2)
 
 def compute_h_mW(list_of_devices,device_index,eta,beta,h_tilde):
-    path_loss
     #device blocked by obstacle
-    if(device_index==2 or device_index==6):
+    if(device_index==1 or device_index==6):
         path_loss=path_loss_mw_nlos(distance_to_AP(list_of_devices[device_index]))
+        h=G(eta,beta)*np.abs(h_tilde)*pow(10,-path_loss/20)*0.1 #G_Rx^k=epsilon
     #device not blocked
     else:
         path_loss=path_loss_mW_los(distance_to_AP(list_of_devices[device_index]))
-    h=G(eta,beta)*h_tilde*pow(10,-path_loss/20)*G_Rxk
-    return h
+        h=pow(G(eta,beta)*np.abs(h_tilde)*pow(10,-path_loss/20),2) # G_Rx^k = G_b
+
+    return np.power(np.abs(h),2)
 
 
 #return a matrix of channel coefficient h between device k and AP on subchannel n
@@ -110,34 +112,36 @@ def compute_devices_h_mW(list_of_devices,eta,beta,h_tilde):
     list_of_devices_h=np.matrix(np.zeros([NUM_OF_DEVICE,NUM_OF_SUB_CHANNEL]))
     for k in range(NUM_OF_DEVICE):
         for m in range (NUM_OF_BEAM):
-            list_of_devices_h[k,m]=compute_h_mW(list_of_devices,k,eta,beta,h_tilde)
+            h_tilde_k = h_tilde[k]
+            list_of_devices_h[k,m]=compute_h_mW(list_of_devices,k,eta,beta,h_tilde[k,m])
     return list_of_devices_h
 
 
 # gamma_sub(h,k,n) (t) is the Signal to Interference-plus-Noise Ratio (SINR) from AP to device k on subchannel n with channel coefficient h
-def gamma_sub(h,device_index,channel_index):
-    power=pow(abs(h[device_index,channel_index]),2)*P
-    interference_plus_noise=W*SIGMA_SQR
-    for b in range(NUM_OF_DEVICE):
-        if(b!=device_index):
-            interference_plus_noise += pow(abs(h[device_index,channel_index]),2)*P
+def gamma_sub(h,device_index):
+    power=h*P
+    interference_plus_noise=W_SUB*SIGMA_SQR
+    # for b in range(NUM_OF_AP):
+    #     if(b!=AP_index):
+    #         interference_plus_noise += pow(abs(h[device_index,channel_index]),2)*P
     return power/interference_plus_noise
+
 # gamma_mW(k,m) (t) is the Signal to Interference-plus-Noise Ratio (SINR) from AP to device k on beam m with channel coeffiction h
-def gamma_mW(h,device_index,beam_index):
-    power=pow(abs(h[device_index,beam_index]),2)*P
-    interference_plus_noise=W*SIGMA_SQR
-    for b in range(NUM_OF_DEVICE):
-        if(b!=device_index):
-            interference_plus_noise += pow(abs(h[device_index,beam_index]),2)*P
+def gamma_mW(h,device_index):
+    power=h*P
+    interference_plus_noise=W_MW*SIGMA_SQR
+    # for b in range(NUM_OF_AP):
+    #     if(b!=AP_index):
+    #         interference_plus_noise += pow(abs(h[device_index,beam_index]),2)*P
     return power/interference_plus_noise
 
 
 #achievable data rate r_bkf (t) for the link between
 # AP b, device k and for application f using bandwidth Wf at scheduling frame t
-def r_sub(h,AP_index,device_index,channel_index):
-    return W*np.log2(1+gamma_sub(h,device_index,channel_index))
-def r_mW(h,AP_index,device_index,beam_index,eta,beta):
-    return W*np.log2(1+gamma_sub(h,device_index,beam_index))
+def r_sub(h,device_index):
+    return W_SUB*np.log2(1+gamma_sub(h,device_index))
+def r_mW(h,device_index):
+    return W_MW*np.log2(1+gamma_sub(h,device_index))
 
 
 # Maximum number of packets of size d bits that can be received successfully at device k on interface v
@@ -160,12 +164,12 @@ def packet_loss_rate(t,old_packet_loss_rate,packet_successful_rate,l_kv):
         return packet_loss_rate
 
 #Plot APs and devices Position
-plt.title("AP and devices Position")
-device_x,device_y=zip(*list_of_devices)
-plt.scatter(AP_POSITION[0],AP_POSITION[1],cmap='hot')
-plt.scatter(device_x,device_y,cmap='hot')
-plt.grid()
-plt.show(block=False)
+# plt.title("AP and devices Position")
+# device_x,device_y=zip(*list_of_devices)
+# plt.scatter(AP_POSITION[0],AP_POSITION[1],cmap='hot')
+# plt.scatter(device_x,device_y,cmap='hot')
+# plt.grid()
+# plt.show(block=False)
 
 
 #the value of r_bkf is immediate
