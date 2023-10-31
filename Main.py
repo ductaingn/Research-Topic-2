@@ -295,16 +295,22 @@ def update_alpha(alpha,V):
 
 # Set up environment
 # Complex channel coefficient
-def generate_h_tilde(mu,sigma):
+def generate_h_tilde(mu,sigma,num_of_frame):
     h_tilde = []
-    h_tilde_sub = np.empty(shape=(NUM_OF_DEVICE,env.NUM_OF_SUB_CHANNEL),dtype=complex)
-    h_tilde_sub[:,:] = env.generate_h_tilde(mu,sigma)
+    h_tilde_sub = env.generate_h_tilde(mu,sigma,num_of_frame*NUM_OF_DEVICE*env.NUM_OF_SUB_CHANNEL)
+    h_tilde_mW = env.generate_h_tilde(mu,sigma,num_of_frame*NUM_OF_DEVICE*env.NUM_OF_BEAM)
+    for frame in range(num_of_frame):
+        h_tilde_sub_t = np.empty(shape=(NUM_OF_DEVICE,env.NUM_OF_SUB_CHANNEL),dtype=complex)
+        for k in range(NUM_OF_DEVICE):
+            for n in range(env.NUM_OF_SUB_CHANNEL):
+                h_tilde_sub_t[k,n]=h_tilde_sub[frame*NUM_OF_DEVICE*env.NUM_OF_SUB_CHANNEL + k*env.NUM_OF_SUB_CHANNEL +n]
 
-    h_tilde_mW= np.empty(shape=(NUM_OF_DEVICE,env.NUM_OF_BEAM),dtype=complex)
-    h_tilde_mW[:,:] = env.generate_h_tilde(mu,sigma)
-
-    h_tilde.append(h_tilde_sub)
-    h_tilde.append(h_tilde_mW)
+        h_tilde_mW_t= np.empty(shape=(NUM_OF_DEVICE,env.NUM_OF_BEAM),dtype=complex)
+        for k in range(NUM_OF_DEVICE):
+            for n in range(env.NUM_OF_BEAM):
+                h_tilde_mW_t[k,n]=h_tilde_mW[frame*NUM_OF_DEVICE*env.NUM_OF_BEAM + k*env.NUM_OF_BEAM +n]
+        h_tilde_t=[h_tilde_sub_t,h_tilde_mW_t]
+        h_tilde.append(h_tilde_t)
     return h_tilde
 
 # Achievable rate 
@@ -355,8 +361,9 @@ alpha = initialize_alpha()
 packet_loss_rate = np.zeros(shape=(NUM_OF_DEVICE,2))
 
 # Generate h_tilde for all frame
-h_tilde = generate_h_tilde(0,1)
-adverage_r=compute_r(device_positions,h_tilde,allocation=allocate(action))
+h_tilde = generate_h_tilde(0,1,T)
+h_tilde_t = h_tilde[0]
+adverage_r=compute_r(device_positions,h_tilde_t,allocation=allocate(action))
 
 for frame in range(1,T):
     # Random Q-table
@@ -367,7 +374,7 @@ for frame in range(1,T):
     EPSILON = EPSILON * LAMBDA
 
     # Set up environment
-    h_tilde = generate_h_tilde(0,1)
+    h_tilde_t = h_tilde[frame]
     allocation = allocate(action)
 
     l_max_estimate = compute_l_max(adverage_r)
@@ -381,7 +388,7 @@ for frame in range(1,T):
     number_of_send_packet = perform_action(action,l_sub_max_estimate,l_mW_max_estimate)
 
     # Get feedback
-    r = compute_r(device_positions,h_tilde,allocation)
+    r = compute_r(device_positions,h_tilde_t,allocation)
     l_max = compute_l_max(r)
     l_sub_max = l_max[0]
     l_mW_max = l_max[1]
