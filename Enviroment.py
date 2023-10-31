@@ -77,10 +77,12 @@ def G(eta,beta):
 #Channel coefficient h=h_tilde* 10^(-pathloss/20)
 #h_tilde = (a + b*i)/sqrt(2)
 #in which a and b is random value from a Normal distribution
-def generate_h_tilde(mu,sigma):
-    re=np.random.normal(mu,sigma,1)[0]
-    im=np.random.normal(mu,sigma,1)[0]
-    h_tilde=complex(re,im)/np.sqrt(2)
+def generate_h_tilde(mu,sigma,amount):
+    re=np.random.normal(mu,sigma,amount)
+    im=np.random.normal(mu,sigma,amount)
+    h_tilde=[]
+    for i in range (amount):
+        h_tilde.append(complex(re[i],im[i])/np.sqrt(2))
     return h_tilde
 
 def compute_h_sub(list_of_devices,device_index,h_tilde):
