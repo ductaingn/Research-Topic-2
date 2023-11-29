@@ -4,14 +4,14 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pickle
 
-def save(param,arg):
-    file_name = arg+'.pickle'
-    file = open(file_name,'wb')
+def save(param,file_name):
+    name = './result/'+file_name+'.pickle'
+    file = open(name,'wb')
     pickle.dump(param,file)
-    print(f"Saved {arg}!")
+    print(f"Saved {file_name}!")
             
-def load(arg):
-    file_name = arg+'.pickle'
-    file = open(file_name,'rb')
+def load(file_name):
+    name = './result/'+file_name+'.pickle'
+    file = open(name,'rb')
     res = pickle.load(file)
     return res
