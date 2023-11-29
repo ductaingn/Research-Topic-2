@@ -15,14 +15,15 @@ NUM_OF_AP = 1
 # Number of Devices
 NUM_OF_DEVICE = 3
 # Number of Sub-6Ghz channels N and mmWave beam M
-NUM_OF_SUB_CHANNEL = 3
-NUM_OF_BEAM = 3
+NUM_OF_SUB_CHANNEL = 4
+NUM_OF_BEAM = 4
 # Transmit Power P_sub = P_mW = P ~ 5dBm
 P = pow(10, 5/10)
 # Noise Power sigma^2 ~ -169dBm/Hz
 SIGMA_SQR = pow(10, -169/10)
-# Bandwidth W_Sub = 100MHz, W_mW = 1GHz
-W_SUB = 1e8
+# Bandwidth Sub6-GHz = 100MHz, W_mW = 1GHz
+# Bandwidth per subchannel W_sub = 100MHz/number of sub channel
+W_SUB = 1e8/NUM_OF_SUB_CHANNEL
 W_MW = 1e9
 # Frame Duration T_s
 T = 1
@@ -48,13 +49,28 @@ def distance_to_AP(pos_of_device):
 # if the distance is satisfied, store it into the array list_of_devices.
 def initialize_devices_pos():
     list_of_devices = []
-    i = 0
-    while i < NUM_OF_DEVICE:
-        list_of_devices.append((rd.uniform(0, length), rd.uniform(0, width)))
-        if (distance_to_AP(pos_of_device=list_of_devices[i]) >= 0.001):
-            i = i+1
+
+    for i in range (NUM_OF_DEVICE):
+        # Distance from Device #1 to AP and Device #2 to AP is equal
+        if(i==1):
+            distance_d0 = distance_to_AP(list_of_devices[0])
+            x = rd.uniform(AP_POSITION[0]-distance_d0,AP_POSITION[0]+distance_d0)
+            y = AP_POSITION[1]-np.sqrt(distance_to_AP(list_of_devices[0])**2-(x-AP_POSITION[0])**2)
+            y = y if y>0 else -y
+        
+        # Distance from Device #3 to AP is greater than from Device #1 and #2 
+        elif(i==2):
+            x = rd.uniform(0,length)
+            y = rd.uniform(0,width)
+            while(distance_to_AP(list_of_devices[0]) > distance_to_AP([x,y])):
+                x = rd.uniform(0,length)
+                y = rd.uniform(0,width)
+
         else:
-            list_of_devices.remove(list_of_devices[i])
+            x = rd.uniform(0,length)
+            y = rd.uniform(0,width)
+
+        list_of_devices.append((x,y))
     return list_of_devices
 
 
@@ -212,24 +228,3 @@ def plot_position(ap_pos, device_pos):
     plt.grid()
     plt.show()
 
-
-# the value of r_bkf is immediate
-# suppose in the real world, we have 10000 frames that devices have to take action
-# suppose the transmit power not depend on application f of device k -> r_bkf depends on which device k of AP b is?
-# each frame has its r_bkf
-# Simulating 10000 frames, determine the value of r_bkf in each frame
-# def write_data(list_of_r_from_0_to_t,NUM_OF_FRAME):
-#     list_of_r_from_0_to_t = [[] for i in range(NUM_OF_FRAME)]
-#     file = open("data_r.txt", "w")
-
-#     for i in range(NUM_OF_FRAME):
-#         file.writelines(' FRAME START! '.center(200,'=')+"\n")
-#         for b in range(NUM_OF_AP):
-#             for k in range(NUM_OF_DEVICE):
-#                 r_bkf = r(b, k, application_index=1)
-#                 file.write(f"{str(round(r_bkf,5)): <20}")
-#                 list_of_r_from_0_to_t[i].append(r_bkf)
-#             file.writelines("\n")
-#         file.writelines(' END OF FRAME! '.center(200,'=')+"\n\n")
-
-#     file.close()

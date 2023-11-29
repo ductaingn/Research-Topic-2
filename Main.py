@@ -79,10 +79,19 @@ def chose_action(state, Q_table):
 # allocate[0] = [index of subchannel device 0 allocate, subchannel device 1 allocate, subchannel device 2 allocate]
 # allocate[1] = [index of beam device 0 allocate, beam device 1 allocate, beam device 2 allocate]
 def allocate(action):
-    sub = [-1, -1, -1]  # Stores index of subchannel device will allocate
-    mW = [-1, -1, -1]  # Stores index of beam device will allocate
-    rand_sub = [0, 1, 2]
-    rand_mW = [0, 1, 2]
+    sub = []  # Stores index of subchannel device will allocate
+    mW = []  # Stores index of beam device will allocate
+    for i in range(env.NUM_OF_DEVICE):
+        sub.append(-1)
+        mW.append(-1)
+
+    rand_sub = [] 
+    rand_mW = []
+    for i in range(env.NUM_OF_SUB_CHANNEL):
+        rand_sub.append(i)
+    for i in range(env.NUM_OF_BEAM):
+        rand_mW.append(i)
+
     for k in range(NUM_OF_DEVICE):
         if (action[k] == 0):
             rand_index = np.random.randint(len(rand_sub))
@@ -130,12 +139,12 @@ def perform_action(action, l_sub_max, l_mW_max):
     return number_of_packet
 
 # Return an matrix where feedback[k] = [number of received packets on sub, number of received packets on mW]
-def receive_feedback(action_performed, l_sub_max, l_mW_max):
+def receive_feedback(num_of_send_packet, l_sub_max, l_mW_max):
     feedback = np.zeros(shape=(NUM_OF_DEVICE, 2))
 
     for k in range(NUM_OF_DEVICE):
-        l_sub_k = action_performed[k, 0]
-        l_mW_k = action_performed[k, 1]
+        l_sub_k = num_of_send_packet[k, 0]
+        l_mW_k = num_of_send_packet[k, 1]
 
         feedback[k, 0] = min(l_sub_k, l_sub_max[k])
         feedback[k, 1] = min(l_mW_k, l_mW_max[k])
@@ -197,7 +206,7 @@ def compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward
     for k in range(NUM_OF_DEVICE):
         state_k = state[k]
         sum = sum + (num_of_received_packet[k, 0] + num_of_received_packet[k, 1])/(
-            num_of_send_packet[k, 0]+num_of_send_packet[k, 1]) - (1 - state_k[0]) - (1-state_k[1])
+            num_of_send_packet[k, 0] + num_of_send_packet[k, 1]) - (1 - state_k[0]) - (1-state_k[1])
     sum = (((frame_num - 1)*old_reward) + sum)/frame_num
     return sum
 
@@ -396,9 +405,11 @@ h_tilde_t = h_tilde[0]
 adverage_r = compute_r(device_positions, h_tilde_t,
                        allocation=allocate(action))
 
-adverage_reward_plot=[]
-number_of_received_packet_plot=[]
+state_plot=[]
+action_plot=[]
 reward_plot=[]
+number_of_sent_packet_plot=[]
+number_of_received_packet_plot=[]
 for frame in range(1, T):
     # Random Q-table
     H = np.random.randint(0, I)
@@ -409,10 +420,12 @@ for frame in range(1, T):
 
     # Set up environment
     h_tilde_t = h_tilde[frame]
+    state_plot.append(state)
 
     # Select action
     action = chose_action(state, risk_adverse_Q)
     allocation = allocate(action)
+    action_plot.append(action)
 
     # Perform action
     l_max_estimate = compute_l_max(adverage_r)
@@ -420,6 +433,8 @@ for frame in range(1, T):
     l_mW_max_estimate = l_max_estimate[1]
     number_of_send_packet = perform_action(
         action, l_sub_max_estimate, l_mW_max_estimate)
+    number_of_sent_packet_plot.append(number_of_send_packet)
+    
 
     # Get feedback
     r = compute_r(device_positions, h_tilde_t, allocation)
@@ -431,7 +446,7 @@ for frame in range(1, T):
         number_of_send_packet, l_sub_max, l_mW_max)
     packet_loss_rate = compute_packet_loss_rate(
         frame, packet_loss_rate, number_of_received_packet, number_of_send_packet)
-    number_of_received_packet_plot.append(sum(number_of_received_packet))
+    number_of_received_packet_plot.append(number_of_received_packet)
     adverage_r = compute_average_r(adverage_r, r, frame)
 
     # Compute reward
@@ -439,10 +454,6 @@ for frame in range(1, T):
         state, action, reward, number_of_send_packet, number_of_received_packet, frame)
     state_action = np.insert(state, 4, action, axis=1)
     state_action = tuple([tuple(row) for row in state_action])
-    # if(frame==1):
-    #     adverage_reward_plot.append(reward.get(state_action))
-    # else:
-    #     adverage_reward_plot.append((reward.get(state_action)+(frame-1)*adverage_reward_plot[len(adverage_reward_plot)-1])/frame)
     reward_plot.append(reward.get(state_action))
     next_state = update_state(state, packet_loss_rate,
                               number_of_received_packet)
@@ -459,4 +470,13 @@ for frame in range(1, T):
     state = next_state
 
 IO.save(number_of_received_packet_plot,'number_of_received_packet')
+IO.save(number_of_sent_packet_plot,'number_of_sent_packet')
 IO.save(reward_plot,'reward')
+IO.save(action_plot,'action')
+IO.save(state_plot,'state')
+IO.save(h_tilde,'h_tilde')
+IO.save(device_positions,'device_positions')
+IO.save(Q_tables,'Q_tables')
+IO.save(reward,'all_reward')
+#plot packet loss rate
+#plot interface usage
