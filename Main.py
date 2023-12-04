@@ -9,7 +9,7 @@ NUM_OF_AP = 1
 NUM_OF_DEVICE = 3
 # Number of Sub-6GHz channels, Number of MmWave beams
 N = M = 4
-# Maximum Packet Loss Rate
+# Maximum Packet Loss Rate (PLR Requirement)
 RHO_MAX = 0.1
 # L_k
 L_k = 6
@@ -24,11 +24,18 @@ GAMMA = 0.9
 EPSILON = 0.5
 # Decay factor
 LAMBDA = 0.995
-# p_max
-P_MAX = 0.1
 # Number of Q-tables
 I = 2
 X0 = -1
+# Number of levels of quantitized Transmit Power 
+A = 10
+# Emitting power constraints P_min = 5 dBm, P_max = 38 dBm 
+P_MIN = pow(10,5/10)
+P_MAX = pow(10,38/10)
+# Power set
+POWER_SET = [0,P_MIN]
+for i in range(2,A):
+    POWER_SET.append(P_MIN*pow(P_MAX/P_MIN,1/(A-i)))
 
 # PLOT DATA POINTS
 
