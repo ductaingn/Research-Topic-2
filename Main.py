@@ -410,6 +410,8 @@ action_plot=[]
 reward_plot=[]
 number_of_sent_packet_plot=[]
 number_of_received_packet_plot=[]
+packet_loss_rate_plot=[]
+
 for frame in range(1, T):
     # Random Q-table
     H = np.random.randint(0, I)
@@ -446,6 +448,7 @@ for frame in range(1, T):
         number_of_send_packet, l_sub_max, l_mW_max)
     packet_loss_rate = compute_packet_loss_rate(
         frame, packet_loss_rate, number_of_received_packet, number_of_send_packet)
+    packet_loss_rate_plot.append(packet_loss_rate)
     number_of_received_packet_plot.append(number_of_received_packet)
     adverage_r = compute_average_r(adverage_r, r, frame)
 
@@ -478,5 +481,4 @@ IO.save(h_tilde,'h_tilde')
 IO.save(device_positions,'device_positions')
 IO.save(Q_tables,'Q_tables')
 IO.save(reward,'all_reward')
-#plot packet loss rate
-#plot interface usage
+IO.save(packet_loss_rate_plot,'packet_loss_rate')
