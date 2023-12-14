@@ -25,6 +25,15 @@ SIGMA_SQR = pow(10, -169/10)
 # Bandwidth per subchannel W_sub = 100MHz/number of sub channel
 W_SUB = 1e8/NUM_OF_SUB_CHANNEL
 W_MW = 1e9
+# Number of levels of quantitized Transmit Power
+A = 10
+# Emitting power constraints P_min = 5 dBm, P_max = 38 dBm 
+P_MIN = pow(10,5/10)
+P_MAX = pow(10,38/10)
+# Power set
+POWER_SET = [0,P_MIN]
+for i in range(2,A):
+    POWER_SET.append(P_MIN*pow(P_MAX/P_MIN,1/(A-i)))
 # Frame Duration T_s
 T = 1
 # Packet size D = 8 bit
@@ -158,10 +167,16 @@ def compute_devices_h_mW(list_of_devices, eta, beta, h_tilde):
                 list_of_devices, k, eta, beta, h_tilde[k, m])
     return list_of_devices_h
 
+# check if sum of all power on interface <= P_max ?
+def power_constraint_satisfaction(power_level_list):
+    sum = 0
+    for i in power_level_list:
+        sum += POWER_SET[i]
+    return sum<=P_MAX
 
 # gamma_sub(h,k,n) (t) is the Signal to Interference-plus-Noise Ratio (SINR) from AP to device k on subchannel n with channel coefficient h
-def gamma_sub(h, device_index):
-    power = h*P
+def gamma_sub(h, power=P):
+    power = h*power
     interference_plus_noise = W_SUB*SIGMA_SQR
     # for b in range(NUM_OF_AP):
     #     if(b!=AP_index):
@@ -171,8 +186,8 @@ def gamma_sub(h, device_index):
 # gamma_mW(k,m) (t) is the Signal to Interference-plus-Noise Ratio (SINR) from AP to device k on beam m with channel coeffiction h
 
 
-def gamma_mW(h, device_index):
-    power = h*P
+def gamma_mW(h, power=P):
+    power = h*power
     interference_plus_noise = W_MW*SIGMA_SQR
     # for b in range(NUM_OF_AP):
     #     if(b!=AP_index):

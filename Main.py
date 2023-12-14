@@ -29,24 +29,18 @@ I = 2
 X0 = -1
 # Number of levels of quantitized Transmit Power 
 A = 10
-# Emitting power constraints P_min = 5 dBm, P_max = 38 dBm 
-P_MIN = pow(10,5/10)
-P_MAX = pow(10,38/10)
-# Power set
-POWER_SET = [0,P_MIN]
-for i in range(2,A):
-    POWER_SET.append(P_MIN*pow(P_MAX/P_MIN,1/(A-i)))
 
-# PLOT DATA POINTS
 
 # CREAT STATE
-# State is a NUM_OF_DEVICE*4 matrix
-# where state[k]=[QoS_satisfaction_sub, QoS_satisfaction_mW, ACK feedback at t-1 on sub, ACK feedback at t-1 on mW]
+# State is a NUM_OF_DEVICE*5 matrix
+# in which state[k]=[QoS_satisfaction_sub, QoS_satisfaction_mW, 
+#                   ACK feedback at t-1 on sub, ACK feedback at t-1 on mW, 
+#                   Power level at t-1 on sub, Power level at t-1 on mW]
 def initialize_state():
-    state = np.zeros(shape=(NUM_OF_DEVICE, 4))
+    state = np.zeros(shape=(NUM_OF_DEVICE, 6))
     return state
 
-def update_state(state, packet_loss_rate, feedback):
+def update_state(state, packet_loss_rate, feedback, power_level):
     for k in range(NUM_OF_DEVICE):
         for i in range(2):
             # QoS satisfaction
@@ -56,13 +50,24 @@ def update_state(state, packet_loss_rate, feedback):
                 state[k, i] = 0
             # Number of successfully delivered packet on each interface
             state[k, i+2] = feedback[k, i]
+
+        state[k,4] = power_level[0]
+        state[k,5] = power_level[1]
     return state
 
 # CREATE ACTION
-# Action is an array where action[k] is the action of device k
+# Action is an ndarray in which action[k] = [interface, power level on sub, power level on mW]
 def initialize_action():
     # Initialize random action at the beginning
-    action = np.random.randint(0, 3, NUM_OF_DEVICE)
+    # Choose interface 
+    interface = np.random.randint(0, 3, NUM_OF_DEVICE)
+    
+    # Choose power level
+    power_level = np.random.randint(0, A, (NUM_OF_DEVICE,2))
+
+    action = np.ndarray(shape=(NUM_OF_DEVICE,3))
+    for i in range(NUM_OF_DEVICE):
+        action[i] = interface[i],power_level[i,0],power_level[i,1]
     return action
 
 
@@ -75,14 +80,14 @@ def chose_action(state, Q_table):
     else:
         max_Q = -np.Infinity
         for i in Q_table:
-            state_i = np.asarray(i)[:, 0:4]
+            state_i = np.asarray(i)[:, 0:6]
             if ((np.allclose(state_i, state, rtol=0, atol=0)) & (Q_table.get(i) > max_Q)):
                 max_Q = Q_table.get(i)
                 i = np.array(i)
-                action = i[:, 4]
+                action = i[:, 6:9]
         return action
 
-# Chose subchannel/beam
+# Chose which subchannel/beam to allocate
 # allocate[0] = [index of subchannel device 0 allocate, subchannel device 1 allocate, subchannel device 2 allocate]
 # allocate[1] = [index of beam device 0 allocate, beam device 1 allocate, beam device 2 allocate]
 def allocate(action):
@@ -100,15 +105,15 @@ def allocate(action):
         rand_mW.append(i)
 
     for k in range(NUM_OF_DEVICE):
-        if (action[k] == 0):
+        if (action[k,0] == 0):
             rand_index = np.random.randint(len(rand_sub))
             sub[k] = rand_sub[rand_index]
             rand_sub.pop(rand_index)
-        if (action[k] == 1):
+        if (action[k,0] == 1):
             rand_index = np.random.randint(len(rand_mW))
             mW[k] = rand_mW[rand_index]
             rand_mW.pop(rand_index)
-        if (action[k] == 2):
+        if (action[k,0] == 2):
             rand_sub_index = np.random.randint(len(rand_sub))
             rand_mW_index = np.random.randint(len(rand_mW))
 
@@ -121,22 +126,22 @@ def allocate(action):
     allocate = [sub, mW]
     return allocate
 
-# Return an matrix where number_of_packet[k] = [number of transmit packets on sub, number of transmit packets on mW]
-def perform_action(action, l_sub_max, l_mW_max):
+# Return an matrix in which number_of_packet[k] = [number of transmit packets on sub, number of transmit packets on mW]
+def compute_number_of_send_packet(action, l_sub_max, l_mW_max):
     number_of_packet = np.zeros(shape=(NUM_OF_DEVICE, 2))
     for k in range(NUM_OF_DEVICE):
         l_sub_max_k = l_sub_max[k]
         l_mW_max_k = l_mW_max[k]
-        if (action[k] == 0):
+        if (action[k,0] == 0):
             # If l_sub_max too small, sent 1 packet and get bad reward later
             number_of_packet[k, 0] = max(1, min(l_sub_max_k, L_k))
             number_of_packet[k, 1] = 0
 
-        if (action[k] == 1):
+        if (action[k,0] == 1):
             number_of_packet[k, 0] = 0
             number_of_packet[k, 1] = max(1, min(l_mW_max_k, L_k))
 
-        if (action[k] == 2):
+        if (action[k,0] == 2):
             if (l_mW_max_k < L_k):
                 number_of_packet[k, 1] = l_mW_max_k
                 number_of_packet[k, 0] = min(l_sub_max_k, L_k - l_mW_max_k)
@@ -145,7 +150,24 @@ def perform_action(action, l_sub_max, l_mW_max):
                 number_of_packet[k, 1] = L_k - 1
     return number_of_packet
 
-# Return an matrix where feedback[k] = [number of received packets on sub, number of received packets on mW]
+# Choose power level will provide for each device over its beam/subchannel so it satisfies the power constraint base on previous rate
+# Return a matrix in which power_level[k] = [power level on sub, power level on mW]
+def compute_power_level(action,rate):
+    power_level_sub = action[:,1]
+    power_level_mW = action[:,2]
+    rate_sub,rate_mW = rate
+    best_rate_device_sub = rate_sub.index(max(rate_sub))
+    best_rate_device_mW = rate_mW.index(max(rate_mW))
+
+    while(not env.power_constraint_satisfaction(power_level_sub)):
+        power_level_sub[best_rate_device_sub]-=1
+
+    while(not env.power_constraint_satisfaction(power_level_mW)):
+        power_level_mW[best_rate_device_mW]-=1
+
+    return [power_level_sub,power_level_mW]
+
+# Return an matrix in which feedback[k] = [number of received packets on sub, number of received packets on mW]
 def receive_feedback(num_of_send_packet, l_sub_max, l_mW_max):
     feedback = np.zeros(shape=(NUM_OF_DEVICE, 2))
 
@@ -401,6 +423,7 @@ state = initialize_state()
 action = initialize_action()
 reward = initialize_reward(state, action)
 allocation = allocate(action)
+power_level = compute_power_level(action,rate=[np.zeros(NUM_OF_DEVICE),np.zeros(NUM_OF_DEVICE)])
 Q_tables = initialize_Q_tables()
 V = initialize_V()
 alpha = initialize_alpha()
@@ -411,6 +434,7 @@ h_tilde = generate_h_tilde(0, 1, T)
 h_tilde_t = h_tilde[0]
 adverage_r = compute_r(device_positions, h_tilde_t,
                        allocation=allocate(action))
+r = compute_r(device_positions, h_tilde_t, allocation)
 
 state_plot=[]
 action_plot=[]
@@ -438,8 +462,10 @@ for frame in range(1, T):
     l_max_estimate = compute_l_max(adverage_r)
     l_sub_max_estimate = l_max_estimate[0]
     l_mW_max_estimate = l_max_estimate[1]
-    number_of_send_packet = perform_action(
+    number_of_send_packet = compute_number_of_send_packet(
         action, l_sub_max_estimate, l_mW_max_estimate)
+    power_level = compute_power_level(action,rate=r)
+    
     number_of_sent_packet_plot.append(number_of_send_packet)
     
 
