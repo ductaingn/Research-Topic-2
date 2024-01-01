@@ -40,16 +40,17 @@ def initialize_state():
     return state
 
 def update_state(state, packet_loss_rate, feedback):
+    next_state = state.copy()
     for k in range(NUM_OF_DEVICE):
         for i in range(2):
             # QoS satisfaction
             if (packet_loss_rate[k, i] <= RHO_MAX):
-                state[k, i] = 1
+                next_state[k, i] = 1
             elif (packet_loss_rate[k, i] > RHO_MAX):
-                state[k, i] = 0
+                next_state[k, i] = 0
             # Number of successfully delivered packet on each interface
-            state[k, i+2] = feedback[k, i]
-    return state
+            next_state[k, i+2] = feedback[k, i]
+    return next_state
 
 # CREATE ACTION
 # Action is an array where action[k] is the action of device k
@@ -207,7 +208,7 @@ def compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward
         state_k = state[k]
         sum = sum + (num_of_received_packet[k, 0] + num_of_received_packet[k, 1])/(
             num_of_send_packet[k, 0] + num_of_send_packet[k, 1]) - (1 - state_k[0]) - (1-state_k[1])
-    sum = (((frame_num - 1)*old_reward) + sum)/frame_num
+    sum = ((frame_num - 1)*old_reward + sum)/frame_num
     return sum
 
 
@@ -266,31 +267,29 @@ def u(x):
     return -np.exp(BETA*x)
 
 
-def update_Q_table(Q_table, alpha, reward, next_state):
-    # reward is updated before Q-table so it already has all Q-table key and key(state_action) that Q-table has not have yet
-    for state_action in reward:
-        if (not (state_action in Q_table)):
-            Q_table.update({state_action: 0})
+def update_Q_table(Q_table, alpha, reward, state, action, next_state,Q_max_table):
+    state_action = np.insert(state, 4, action, axis=1)
+    state_action = tuple([tuple(row) for row in state_action])
+    if(not state_action in Q_table):
+        Q_table.update({state_action:0})
 
-        # Find max(Q(s(t+1),a)
-        max_Q = -np.Infinity
-        next_state_exist = False
-        for i in Q_table:
-            state_i = np.asarray(i)[:, 0:4]
-            if ((np.allclose(state_i, next_state, rtol=0, atol=0)) & (Q_table[i] > max_Q)):
-                max_Q = Q_table[i]
-                next_state_exist = True
+    # Find max(Q(s(t+1),a)
+    max_Q = 0
+    next_state = tuple([tuple(row) for row in next_state])
+    if(next_state in Q_max_table):
+        max_Q = Q_max_table[next_state]
 
-        # State(t+1) does not exist in Q-table (Q-table's type is dictionary)
-        if (next_state_exist == False):
-            max_Q = 0
-        if (alpha.get(state_action) == None):
-            alpha_state_action = 0
-        else:
-            alpha_state_action = alpha.get(state_action)
+    if (alpha.get(state_action) == None):
+        alpha_state_action = 0
+    else:
+        alpha_state_action = alpha.get(state_action)
 
-        Q_table[state_action] = Q_table[state_action] + alpha_state_action * (u(reward.get(state_action) + GAMMA *
-             max_Q - Q_table[state_action]) - X0)
+    Q_table[state_action] = Q_table[state_action] + alpha_state_action * (u(reward + GAMMA *
+            max_Q - Q_table[state_action]) - X0)
+
+    state = tuple([tuple(row) for row in np.array(state)])
+    if((not (state in Q_max_table)) or Q_table[state_action] > Q_max_table[state]):
+        Q_max_table[state] = Q_table[state_action]
 
     return Q_table
 
@@ -392,15 +391,16 @@ device_positions = env.initialize_devices_pos()
 # env.plot_position(ap_pos=env.AP_POSITION, device_pos=device_positions)
 state = initialize_state()
 action = initialize_action()
-reward = initialize_reward(state, action)
+reward = 0
 allocation = allocate(action)
 Q_tables = initialize_Q_tables()
+Q_max_table = initialize_Q_tables()
 V = initialize_V()
 alpha = initialize_alpha()
 packet_loss_rate = np.zeros(shape=(NUM_OF_DEVICE, 2))
 
 # Generate h_tilde for all frame
-h_tilde = generate_h_tilde(0, 1, T)
+h_tilde = generate_h_tilde(0, 1, T+1)
 h_tilde_t = h_tilde[0]
 adverage_r = compute_r(device_positions, h_tilde_t,
                        allocation=allocate(action))
@@ -411,8 +411,9 @@ reward_plot=[]
 number_of_sent_packet_plot=[]
 number_of_received_packet_plot=[]
 packet_loss_rate_plot=[]
+rate_plot=[]
 
-for frame in range(1, T):
+for frame in range(1, T+1):
     # Random Q-table
     H = np.random.randint(0, I)
     risk_adverse_Q = compute_risk_adverse_Q(Q_tables, H)
@@ -443,6 +444,7 @@ for frame in range(1, T):
     l_max = compute_l_max(r)
     l_sub_max = l_max[0]
     l_mW_max = l_max[1]
+    rate_plot.append(r)
 
     number_of_received_packet = receive_feedback(
         number_of_send_packet, l_sub_max, l_mW_max)
@@ -453,24 +455,22 @@ for frame in range(1, T):
     adverage_r = compute_average_r(adverage_r, r, frame)
 
     # Compute reward
-    reward = update_reward(
-        state, action, reward, number_of_send_packet, number_of_received_packet, frame)
-    state_action = np.insert(state, 4, action, axis=1)
-    state_action = tuple([tuple(row) for row in state_action])
-    reward_plot.append(reward.get(state_action))
-    next_state = update_state(state, packet_loss_rate,
-                              number_of_received_packet)
+    reward = compute_reward(state, number_of_send_packet, number_of_received_packet,reward, frame)
+    reward_plot.append(reward)
+    next_state = update_state(state, packet_loss_rate, number_of_received_packet)
 
     # Generate mask J
     J = np.random.poisson(1, I)
 
     for i in range(I):
         if (J[i] == 1):
-            Q_table = update_Q_table(Q_tables[i], alpha[i], reward, next_state)
-            V[i] = update_V(V[i], Q_table)
+            Q_tables[i] = update_Q_table(Q_tables[i], alpha[i], reward, state, action, next_state, Q_max_table[i])
+            V[i] = update_V(V[i], Q_tables[i])
             alpha[i] = update_alpha(alpha[i], V[i])
 
     state = next_state
+
+    print('frame: ',frame)
 
 IO.save(number_of_received_packet_plot,'number_of_received_packet')
 IO.save(number_of_sent_packet_plot,'number_of_sent_packet')
@@ -482,3 +482,4 @@ IO.save(device_positions,'device_positions')
 IO.save(Q_tables,'Q_tables')
 IO.save(reward,'all_reward')
 IO.save(packet_loss_rate_plot,'packet_loss_rate')
+IO.save(rate_plot,'rate')

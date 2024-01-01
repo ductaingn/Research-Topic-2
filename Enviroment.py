@@ -52,7 +52,10 @@ def initialize_devices_pos():
 
     for i in range (NUM_OF_DEVICE):
         # Distance from Device #1 to AP and Device #2 to AP is equal
-        if(i==1):
+        if(i==0):
+            x = rd.uniform(30,60)
+            y = rd.uniform(30,60)
+        elif(i==1):
             distance_d0 = distance_to_AP(list_of_devices[0])
             x = rd.uniform(AP_POSITION[0]-distance_d0,AP_POSITION[0]+distance_d0)
             y = AP_POSITION[1]-np.sqrt(distance_to_AP(list_of_devices[0])**2-(x-AP_POSITION[0])**2)
@@ -62,7 +65,7 @@ def initialize_devices_pos():
         elif(i==2):
             x = rd.uniform(0,length)
             y = rd.uniform(0,width)
-            while(distance_to_AP(list_of_devices[0]) > distance_to_AP([x,y])):
+            while(distance_to_AP(list_of_devices[0]) > 1.5*distance_to_AP([x,y])):
                 x = rd.uniform(0,length)
                 y = rd.uniform(0,width)
 
