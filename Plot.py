@@ -36,7 +36,7 @@ def plot_reward():
     plt.title('Reward')
     plt.xlabel('Frame')
     plt.ylabel('Reward')
-    plt.plot(reward)
+    plt.plot(np.divide(reward,3))
     plt.show()
 
 def plot_position():
