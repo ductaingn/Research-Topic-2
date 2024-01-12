@@ -2,6 +2,7 @@ import Enviroment as env
 import IO
 import numpy as np
 import matplotlib.pyplot as plt
+import Plot
 
 # Number of APs
 NUM_OF_AP = 1
@@ -13,8 +14,6 @@ N = M = 4
 RHO_MAX = 0.1
 # L_k
 L_k = 6
-# Number of Frame
-T = 10000
 # Risk control
 LAMBDA_P = 0.5
 # Ultility function paremeter
@@ -40,7 +39,7 @@ def initialize_state():
     return state
 
 def update_state(state, packet_loss_rate, feedback):
-    next_state = state.copy()
+    next_state = np.zeros(shape=(NUM_OF_DEVICE, 4))
     for k in range(NUM_OF_DEVICE):
         for i in range(2):
             # QoS satisfaction
@@ -59,8 +58,7 @@ def initialize_action():
     action = np.random.randint(0, 3, NUM_OF_DEVICE)
     return action
 
-
-def chose_action(state, Q_table):
+def choose_action(state, Q_table):
     # Epsilon-Greedy
     p = np.random.rand()
     action = initialize_action()
@@ -68,12 +66,18 @@ def chose_action(state, Q_table):
         return action
     else:
         max_Q = -np.Infinity
-        for i in Q_table:
-            state_i = np.asarray(i)[:, 0:4]
-            if ((np.allclose(state_i, state, rtol=0, atol=0)) & (Q_table.get(i) > max_Q)):
-                max_Q = Q_table.get(i)
-                i = np.array(i)
-                action = i[:, 4]
+        state = tuple([tuple(row) for row in state])
+        action = tuple(action)
+        random_action = []  # Containts action with Q_value = 0
+        for a in Q_table[state]:
+            if(Q_table[state][a]>=max_Q):
+                max_Q = Q_table[state][a]
+                action = a
+                if(max_Q==0):
+                    random_action.append(action)
+        if(max_Q==0):
+            action = random_action[np.random.randint(0,len(random_action))]
+
         return action
 
 # Chose subchannel/beam
@@ -131,12 +135,12 @@ def perform_action(action, l_sub_max, l_mW_max):
             number_of_packet[k, 1] = max(1, min(l_mW_max_k, L_k))
 
         if (action[k] == 2):
-            if (l_mW_max_k < L_k):
-                number_of_packet[k, 1] = l_mW_max_k
-                number_of_packet[k, 0] = min(l_sub_max_k, L_k - l_mW_max_k)
-            if (l_mW_max_k >= L_k):
-                number_of_packet[k, 0] = 1
+            if(l_mW_max_k<L_k):
+                number_of_packet[k, 1] = max(1, min(l_mW_max_k, L_k))
+                number_of_packet[k, 0] = max(1, min(l_sub_max_k, L_k-number_of_packet[k,1]))
+            else:
                 number_of_packet[k, 1] = L_k - 1
+                number_of_packet[k, 0] = 1
     return number_of_packet
 
 # Return an matrix where feedback[k] = [number of received packets on sub, number of received packets on mW]
@@ -156,28 +160,8 @@ def receive_feedback(num_of_send_packet, l_sub_max, l_mW_max):
 def compute_packet_loss_rate(frame_num, old_packet_loss_rate, received_packet_num, sent_packet_num):
     packet_loss_rate = np.zeros(shape=(NUM_OF_DEVICE, 2))
     for k in range(NUM_OF_DEVICE):
-        # Packet Successfull Rate of device k over Sub-6GHz Interface
-        l_sub_k = sent_packet_num[k, 0]
-        l_mW_k = sent_packet_num[k, 1]
-
-        if (l_sub_k == 0):
-            packet_loss_rate[k, 0] = env.packet_loss_rate(
-                frame_num, old_packet_loss_rate[k, 0], 0, l_sub_k)
-        if (l_sub_k > 0):
-            packet_successfull_rate_sub = env.packet_successful_rate(
-                received_packet_num[k, 0], sent_packet_num[k, 0])
-            packet_loss_rate[k, 0] = env.packet_loss_rate(
-                frame_num, old_packet_loss_rate[k, 0], packet_successfull_rate_sub, l_sub_k)
-
-        # Packet Successfull Rate of device k over MmWave Interface
-        if (l_mW_k == 0):
-            packet_loss_rate[k, 1] = env.packet_loss_rate(
-                frame_num, old_packet_loss_rate[k, 1], 0, l_mW_k)
-        if (l_mW_k > 0):
-            packet_successfull_rate_mW = env.packet_successful_rate(
-                received_packet_num[k, 1], sent_packet_num[k, 1])
-            packet_loss_rate[k, 1] = env.packet_loss_rate(
-                frame_num, old_packet_loss_rate[k, 1], packet_successfull_rate_mW, l_mW_k)
+        packet_loss_rate[k,0] = env.packet_loss_rate(frame_num, old_packet_loss_rate[k,0],received_packet_num[k,0], sent_packet_num[k,0])
+        packet_loss_rate[k,1] = env.packet_loss_rate(frame_num, old_packet_loss_rate[k,1], received_packet_num[k,1], sent_packet_num[k,1])
 
     return packet_loss_rate
 
@@ -189,154 +173,176 @@ def initialize_reward(state, action):
     return reward
 
 # Update reward table
-def update_reward(state, action, old_reward, num_of_send_packet, num_of_received_packet, frame_num):
+def update_reward(state, action, old_reward_table, num_of_send_packet, num_of_received_packet, frame_num):
     state_action = np.insert(state, 4, action, axis=1)
     state_action = tuple([tuple(row) for row in state_action])
-    if (not (state_action in old_reward)):
-        reward = compute_reward(state, num_of_send_packet,
-                                num_of_received_packet, 0, frame_num)
-    else:
-        reward = compute_reward(
-            state, num_of_send_packet, num_of_received_packet, old_reward.get(state_action), frame_num)
-    old_reward.update({state_action: reward})
-    return old_reward
+    old_reward_value = 0
+    if(state_action in old_reward_table):
+        old_reward_value = old_reward_table[state_action]
+    reward = compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward_value, frame_num)
+    old_reward_table.update({state_action: reward})
+    return old_reward_table
 
 # Compute reward of one pair of (state, action)
-def compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward, frame_num):
+def compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward_value, frame_num):
     sum = 0
     for k in range(NUM_OF_DEVICE):
         state_k = state[k]
         sum = sum + (num_of_received_packet[k, 0] + num_of_received_packet[k, 1])/(
             num_of_send_packet[k, 0] + num_of_send_packet[k, 1]) - (1 - state_k[0]) - (1-state_k[1])
-    sum = ((frame_num - 1)*old_reward + sum)/frame_num
+    sum = ((frame_num - 1)*old_reward_value + sum)/frame_num
     return sum
 
 
 # CREATE MODEL
 # A Q-table is a dictionary with key=tuple(state.apend(action)), value = Q(state,action)
-def initialize_Q_tables():
+def initialize_Q_tables(first_state):
     Q_tables = []
+    first_state = tuple([tuple(row) for row in first_state])
     for i in range(I):
         Q = {}
+        add_new_state_to_table(Q,first_state)
         Q_tables.append(Q)
     return Q_tables
 
 
 def add_2_Q_tables(Q1, Q2):
-    for item in Q2:
-        if (item in Q1):
-            Q1[item] += Q2[item]
+    q = Q1.copy()
+    for state in Q2:
+        if (state in q):
+            for a in q[state]:
+                q[state][a] += Q2[state][a]
         else:
-            Q1.update({item: Q2[item]})
-    return Q1
+            q.update({state: Q2[state].copy()})
+    return q
 
 
 def average_Q_table(Q_tables):
     res = {}
-    for i in range(len(Q_tables)):
-        res = add_2_Q_tables(res, Q_tables[i])
-    for i in res:
-        res[i] = res[i]/I
+    for state in range(len(Q_tables)):
+        res = add_2_Q_tables(res, Q_tables[state])
+    for state in res:
+        for action in res[state]:
+            res[state][action] = res[state][action]/I
     return res
 
 
 def compute_risk_adverse_Q(Q_tables, random_Q_index):
-    Q_random = Q_tables[random_Q_index]
-    Q_adverage = average_Q_table(Q_tables)
-    sum_sqrt = {}
+    Q_random = Q_tables[random_Q_index].copy()
+    Q_average = average_Q_table(Q_tables)
+    sum_sqr = {}
+    minus_Q_average = {}
+    for state in Q_average:
+        for action in Q_average[state]:
+            Q_average[state][action] = -Q_average[state][action]
+        minus_Q_average.update({state: Q_average[state].copy()})
+
     for i in range(I):
-        minus_Q_adverage = {}
-        for j in Q_adverage:
-            minus_Q_adverage.update({j: -Q_adverage[j]})
+        sub = {}
+        sub = add_2_Q_tables(sub,Q_tables[i])
+        sub = add_2_Q_tables(sub, minus_Q_average)
+        for state in sub:
+            for action in sub[state]:
+                sub[state][action] *= sub[state][action]
+        sum_sqr = add_2_Q_tables(sum_sqr, sub)
 
-        sub = add_2_Q_tables(Q_tables[i], minus_Q_adverage)
-
-        for j in sub:
-            sub[j] *= sub[j]
-
-    sum_sqrt = add_2_Q_tables(sum_sqrt, sub)
-
-    for i in sum_sqrt:
-        sum_sqrt[i] = -sum_sqrt[i]*LAMBDA_P/(I-1)
-
-    res = add_2_Q_tables(Q_random, sum_sqrt)
+    for state in sum_sqr:
+        for action in sum_sqr[state]:
+            sum_sqr[state][action] = -sum_sqr[state][action]*LAMBDA_P/(I-1)
+    
+    res = add_2_Q_tables({},sum_sqr)
+    res = add_2_Q_tables(res, Q_random)
     return res
 
 
 def u(x):
     return -np.exp(BETA*x)
 
+def add_new_state_to_table(table, state):
+    state = tuple([tuple(row) for row in state])
+    actions = {}
+    for i in range(3):
+        a = np.empty(env.NUM_OF_DEVICE)
+        a[0] = i
+        for j in range(3):
+            a[1] = j
+            for k in range(3):
+                a[2] = k
+                actions.update({tuple(a.copy()):0})
+        table.update({state:actions})
+    return table
 
-def update_Q_table(Q_table, alpha, reward, state, action, next_state,Q_max_table):
-    state_action = np.insert(state, 4, action, axis=1)
-    state_action = tuple([tuple(row) for row in state_action])
-    if(not state_action in Q_table):
-        Q_table.update({state_action:0})
+COUNT = 0
+def update_Q_table(Q_table, alpha, reward, state, action, next_state):
+    state = tuple([tuple(row) for row in state])
+    action = tuple(action)
+    next_state = tuple([tuple(row) for row in next_state])
 
     # Find max(Q(s(t+1),a)
     max_Q = 0
-    next_state = tuple([tuple(row) for row in next_state])
-    if(next_state in Q_max_table):
-        max_Q = Q_max_table[next_state]
-
-    if (alpha.get(state_action) == None):
-        alpha_state_action = 0
-    else:
-        alpha_state_action = alpha.get(state_action)
-
-    Q_table[state_action] = Q_table[state_action] + alpha_state_action * (u(reward + GAMMA *
-            max_Q - Q_table[state_action]) - X0)
-
-    state = tuple([tuple(row) for row in np.array(state)])
-    if((not (state in Q_max_table)) or Q_table[state_action] > Q_max_table[state]):
-        Q_max_table[state] = Q_table[state_action]
-
+    for a in Q_table[state]:
+        if(Q_table[state][a]>max_Q):
+            max_Q = Q_table[state][a]
+    if(Q_table[state][action]!=0):
+        global COUNT
+        COUNT-=1
+    Q_table[state][action] =  Q_table[state][action] + alpha[state][action] * (u(reward + GAMMA * max_Q - Q_table[state][action]) - X0)
+    if(Q_table[state][action]!=0):
+        COUNT+=1
     return Q_table
 
 
-def initialize_V():
-    return initialize_Q_tables()
+def initialize_V(first_state):
+    V_tables = []
+    for i in range(I):
+        V = {}
+        add_new_state_to_table(V,first_state)
+        V_tables.append(V)
+    return V_tables
 
 
-def update_V(V, Q_table):
-    for i in Q_table:
-        if (i in V):
-            V[i] += 1
-        else:
-            V.update({i: 1})
+def update_V(V, state, action):
+    state = tuple([tuple(row) for row in state])
+    action = tuple(action)
+    if(state in V):
+        V[state][action]+=1
+    else:
+        add_new_state_to_table(V,state)
+        V[state][action] = 1
+
     return V
 
 
-def initialize_alpha():
-    return initialize_Q_tables()
+def initialize_alpha(first_state):
+    return initialize_V(first_state)
 
 
-def update_alpha(alpha, V):
-    for i in V:
-        if (i in alpha):
-            alpha[i] = 1/V[i]
-        else:
-            alpha.update({i: 1/V[i]})
+def update_alpha(alpha, V, state, action):
+    state = tuple([tuple(row) for row in state])
+    action = tuple(action)
+    if(state in alpha):
+        alpha[state][action] = 1/V[state][action]
+    else:
+        add_new_state_to_table(alpha,state)
+        alpha[state][action] = 1/V[state][action]
+
     return alpha
 
 # Set up environment
 # Complex channel coefficient
-def generate_h_tilde(mu, sigma, num_of_frame):
+def generate_h_tilde(num_of_frame,mu=0, sigma=1):
     h_tilde = []
-    h_tilde_sub = env.generate_h_tilde(
-        mu, sigma, num_of_frame*NUM_OF_DEVICE*env.NUM_OF_SUB_CHANNEL)
-    h_tilde_mW = env.generate_h_tilde(
-        mu, sigma, num_of_frame*NUM_OF_DEVICE*env.NUM_OF_BEAM)
+    h_tilde_sub = env.generate_h_tilde(mu, sigma, num_of_frame*NUM_OF_DEVICE*env.NUM_OF_SUB_CHANNEL)
+    h_tilde_mW = env.generate_h_tilde(mu, sigma, num_of_frame*NUM_OF_DEVICE*env.NUM_OF_BEAM)
+    
     for frame in range(num_of_frame):
-        h_tilde_sub_t = np.empty(
-            shape=(NUM_OF_DEVICE, env.NUM_OF_SUB_CHANNEL), dtype=complex)
+        h_tilde_sub_t = np.empty(shape=(NUM_OF_DEVICE, env.NUM_OF_SUB_CHANNEL), dtype=complex)
         for k in range(NUM_OF_DEVICE):
             for n in range(env.NUM_OF_SUB_CHANNEL):
                 h_tilde_sub_t[k, n] = h_tilde_sub[frame*NUM_OF_DEVICE *
                                                   env.NUM_OF_SUB_CHANNEL + k*env.NUM_OF_SUB_CHANNEL + n]
 
-        h_tilde_mW_t = np.empty(
-            shape=(NUM_OF_DEVICE, env.NUM_OF_BEAM), dtype=complex)
+        h_tilde_mW_t = np.empty(shape=(NUM_OF_DEVICE, env.NUM_OF_BEAM), dtype=complex)
         for k in range(NUM_OF_DEVICE):
             for n in range(env.NUM_OF_BEAM):
                 h_tilde_mW_t[k, n] = h_tilde_mW[frame*NUM_OF_DEVICE *
@@ -346,7 +352,7 @@ def generate_h_tilde(mu, sigma, num_of_frame):
     return h_tilde
 
 # Achievable rate
-def compute_r(device_positions, h_tilde, allocation):
+def compute_r(device_positions, h_tilde, allocation,frame):
     r = []
     r_sub = np.zeros(NUM_OF_DEVICE)
     r_mW = np.zeros(NUM_OF_DEVICE)
@@ -356,12 +362,10 @@ def compute_r(device_positions, h_tilde, allocation):
         sub_channel_index = allocation[0][k]
         mW_beam_index = allocation[1][k]
         if (sub_channel_index != -1):
-            h_sub_k = env.compute_h_sub(
-                device_positions, k, h_tilde_sub[k, sub_channel_index])
+            h_sub_k = env.compute_h_sub(device_positions, k, h_tilde_sub[k, sub_channel_index])
             r_sub[k] = env.r_sub(h_sub_k, device_index=k)
         if (mW_beam_index != -1):
-            h_mW_k = env.compute_h_mW(device_positions, device_index=k,
-                                      eta=5*np.pi/180, beta=0, h_tilde=h_tilde_mW[k, mW_beam_index])
+            h_mW_k = env.compute_h_mW(device_positions, device_index=k, h_tilde=h_tilde_mW[k, mW_beam_index],frame=frame)
             r_mW[k] = env.r_mW(h_mW_k, device_index=k)
 
     r.append(r_sub)
@@ -369,13 +373,12 @@ def compute_r(device_positions, h_tilde, allocation):
     return r
 
 
-def compute_average_r(adverage_r, last_r, frame_num):
+def compute_average_r(average_r, last_r, frame_num):
+    res = average_r.copy()
     for k in range(NUM_OF_DEVICE):
-        adverage_r[0][k] = frame_num * \
-            (last_r[0][k]+adverage_r[0][k]*(frame_num-1))
-        adverage_r[1][k] = frame_num * \
-            (last_r[1][k]+adverage_r[1][k]*(frame_num-1))
-    return adverage_r
+        res[0][k] =(last_r[0][k] + res[0][k]*(frame_num-1))/frame_num 
+        res[1][k] =(last_r[1][k] + res[1][k]*(frame_num-1))/frame_num 
+    return res
 
 # l_max = r*T/d
 def compute_l_max(r):
@@ -388,22 +391,21 @@ def compute_l_max(r):
 
 # Train with new data
 device_positions = env.initialize_devices_pos()
-# env.plot_position(ap_pos=env.AP_POSITION, device_pos=device_positions)
 state = initialize_state()
 action = initialize_action()
-reward = 0
+reward = initialize_reward(state, action)
+reward_value = 0
 allocation = allocate(action)
-Q_tables = initialize_Q_tables()
-Q_max_table = initialize_Q_tables()
-V = initialize_V()
-alpha = initialize_alpha()
+Q_tables = initialize_Q_tables(state)
+V = initialize_V(state)
+alpha = initialize_alpha(state)
 packet_loss_rate = np.zeros(shape=(NUM_OF_DEVICE, 2))
 
 # Generate h_tilde for all frame
-h_tilde = generate_h_tilde(0, 1, T+1)
+# h_tilde = generate_h_tilde(env.NUM_OF_FRAME+1)
+h_tilde = generate_h_tilde(env.NUM_OF_FRAME+1)
 h_tilde_t = h_tilde[0]
-adverage_r = compute_r(device_positions, h_tilde_t,
-                       allocation=allocate(action))
+average_r = compute_r(device_positions, h_tilde_t, allocation=allocate(action),frame=1)
 
 state_plot=[]
 action_plot=[]
@@ -413,7 +415,7 @@ number_of_received_packet_plot=[]
 packet_loss_rate_plot=[]
 rate_plot=[]
 
-for frame in range(1, T+1):
+for frame in range(1, env.NUM_OF_FRAME+1):
     # Random Q-table
     H = np.random.randint(0, I)
     risk_adverse_Q = compute_risk_adverse_Q(Q_tables, H)
@@ -426,48 +428,48 @@ for frame in range(1, T+1):
     state_plot.append(state)
 
     # Select action
-    action = chose_action(state, risk_adverse_Q)
+    action = choose_action(state, risk_adverse_Q)
     allocation = allocate(action)
     action_plot.append(action)
 
     # Perform action
-    l_max_estimate = compute_l_max(adverage_r)
+    l_max_estimate = compute_l_max(average_r)
     l_sub_max_estimate = l_max_estimate[0]
     l_mW_max_estimate = l_max_estimate[1]
-    number_of_send_packet = perform_action(
-        action, l_sub_max_estimate, l_mW_max_estimate)
+    number_of_send_packet = perform_action(action, l_sub_max_estimate, l_mW_max_estimate)
     number_of_sent_packet_plot.append(number_of_send_packet)
     
 
     # Get feedback
-    r = compute_r(device_positions, h_tilde_t, allocation)
+    r = compute_r(device_positions, h_tilde_t, allocation,frame)
     l_max = compute_l_max(r)
     l_sub_max = l_max[0]
     l_mW_max = l_max[1]
     rate_plot.append(r)
 
-    number_of_received_packet = receive_feedback(
-        number_of_send_packet, l_sub_max, l_mW_max)
-    packet_loss_rate = compute_packet_loss_rate(
-        frame, packet_loss_rate, number_of_received_packet, number_of_send_packet)
+    number_of_received_packet = receive_feedback(number_of_send_packet, l_sub_max, l_mW_max)
+    packet_loss_rate = compute_packet_loss_rate(frame, packet_loss_rate, number_of_received_packet, number_of_send_packet)
     packet_loss_rate_plot.append(packet_loss_rate)
     number_of_received_packet_plot.append(number_of_received_packet)
-    adverage_r = compute_average_r(adverage_r, r, frame)
+    average_r = compute_average_r(average_r, r, frame)
 
     # Compute reward
-    reward = compute_reward(state, number_of_send_packet, number_of_received_packet,reward, frame)
-    reward_plot.append(reward)
+    # reward = update_reward(state, action, reward,number_of_send_packet, number_of_received_packet, frame)
+    reward_value = compute_reward(state,number_of_send_packet,number_of_received_packet,reward_value,frame)
+    reward_plot.append(reward_value)
     next_state = update_state(state, packet_loss_rate, number_of_received_packet)
 
     # Generate mask J
     J = np.random.poisson(1, I)
 
     for i in range(I):
+        next_state_tuple = tuple([tuple(row) for row in next_state])
         if (J[i] == 1):
-            Q_tables[i] = update_Q_table(Q_tables[i], alpha[i], reward, state, action, next_state, Q_max_table[i])
-            V[i] = update_V(V[i], Q_tables[i])
-            alpha[i] = update_alpha(alpha[i], V[i])
-
+            V[i] = update_V(V[i],state,action)
+            alpha[i] = update_alpha(alpha[i], V[i],state,action)
+            Q_tables[i] = update_Q_table(Q_tables[i], alpha[i], reward_value, state, action, next_state)
+        if(not (next_state_tuple in Q_tables[i])):
+            add_new_state_to_table(Q_tables[i], next_state_tuple)
     state = next_state
 
     print('frame: ',frame)
@@ -483,3 +485,8 @@ IO.save(Q_tables,'Q_tables')
 IO.save(reward,'all_reward')
 IO.save(packet_loss_rate_plot,'packet_loss_rate')
 IO.save(rate_plot,'rate')
+print(COUNT)
+Plot.plot_reward()
+Plot.plot_interface_usage()
+Plot.plot_sum_rate()
+Plot.scatter_packet_loss_rate()

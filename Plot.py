@@ -3,15 +3,30 @@ import IO
 import matplotlib.pyplot as plt
 import Enviroment as env
 
+def plot_packet_loss_rate(device):
+    plr = IO.load('packet_loss_rate')
+    plrsub=[]
+    plrmw=[]
+    for i in range(len(plr)):
+        plrsub.append(plr[i][device-1,0])
+        plrmw.append(plr[i][device-1,1])
+    import matplotlib.pyplot as plt
+    plt.plot(plrsub,label='sub')
+    plt.plot(plrmw,label='mw')
+    plt.legend()
+    plt.title(f'Packet loss rate of device {device}')
+    plt.show()
+
 def scatter_packet_loss_rate(device='all'):
     received = IO.load('number_of_received_packet')
+    sent = IO.load('number_of_sent_packet')
 
     x = np.arange(len(received))
 
     if(device!= 'all'):
         plr = []
         for i in range(len(received)):
-            plr.append(1-(received[i][device-1,0]+received[i][device-1,1])/6)
+            plr.append(1-(received[i][device-1,0]+received[i][device-1,1])/(sent[i][device-1,0]+sent[i][device-1,1]))
             
         plt.scatter(x=x, y=plr)
         plt.title(f'Packet loss rate of device {device}')
@@ -20,7 +35,7 @@ def scatter_packet_loss_rate(device='all'):
         plr = np.zeros(shape=(env.NUM_OF_DEVICE,len(received)))
         for i in range(len(received)):
             for k in range(env.NUM_OF_DEVICE):
-                plr[k,i]=(1-(received[i][k,0]+received[i][k,1])/6)
+                plr[k,i]=(1-(received[i][k,0]+received[i][k,1])/(sent[i][k,0]+sent[i][k,1]))
 
         for k in range(env.NUM_OF_DEVICE):
             plt.scatter(x=x,y=plr[k],label = f'Device {k+1}')
@@ -33,6 +48,9 @@ def scatter_packet_loss_rate(device='all'):
 
 def plot_reward():
     reward = IO.load('reward')
+    # p = []
+    # for i in range(len(reward)):
+    #     p.append(np.mean(reward[0:i]))
     plt.title('Reward')
     plt.xlabel('Frame')
     plt.ylabel('Reward')
@@ -50,22 +68,24 @@ def plot_position():
         plt.scatter(device_pos[i][0],device_pos[i][1], color = 'b')
         plt.text(device_pos[i][0]-0.4,device_pos[i][1]+0.8,f"D{i+1}",fontsize=12)
         
-    plt.xlim([0,90])
-    plt.ylim([0,90])
+    plt.xlim([-env.width/2,env.width/2])
+    plt.ylim([-env.length/2,env.length/2])
     plt.legend(loc='upper right')
     plt.grid()
     plt.show()
 
-def plot_action(device=1):
+def scatter_action(device=1):
     action = IO.load('action')
     plot = []
     for i in range(len(action)):
         plot.append(action[i][device-1])
 
-    plt.plot(plot)
-    plt.title(f'Action of device {plot}')
-    plt.xlabel('Frame')
-    plt.ylabel('Action')
+    fig,ax = plt.subplots()
+    x = np.arange(len(action))
+    ax.scatter(x,y=plot)
+    ax.set_title(f'Action of device {device}')
+    ax.set_xlabel('Frame')
+    ax.set_ylabel('Action')
     plt.show()
 
 def plot_interface_usage():
