@@ -186,12 +186,19 @@ def update_reward(state, action, old_reward_table, num_of_send_packet, num_of_re
 # Compute reward of one pair of (state, action)
 def compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward_value, frame_num):
     sum = 0
+    risk = 0
     for k in range(NUM_OF_DEVICE):
         state_k = state[k]
         sum = sum + (num_of_received_packet[k, 0] + num_of_received_packet[k, 1])/(
             num_of_send_packet[k, 0] + num_of_send_packet[k, 1]) - (1 - state_k[0]) - (1-state_k[1])
+        risk_sub=risk_mW=0
+        if(state_k[0]==0 and number_of_send_packet[k,0]>0):
+            risk_sub = -env.NUM_OF_DEVICE
+        if(state_k[1]==0 and number_of_send_packet[k,1]>0):
+            risk_mW = -env.NUM_OF_DEVICE
+        risk+= risk_sub+risk_mW
     sum = ((frame_num - 1)*old_reward_value + sum)/frame_num
-    return sum
+    return [sum, sum + risk]
 
 
 # CREATE MODEL
@@ -396,8 +403,8 @@ alpha = initialize_alpha(state)
 packet_loss_rate = np.zeros(shape=(NUM_OF_DEVICE, 2))
 
 # Generate h_tilde for all frame
+h_tilde = IO.load('h_tilde')
 # h_tilde = generate_h_tilde(env.NUM_OF_FRAME+1)
-h_tilde = generate_h_tilde(env.NUM_OF_FRAME+1)
 h_tilde_t = h_tilde[0]
 average_r = compute_r(device_positions, h_tilde_t, allocation=allocate(action),frame=1)
 
@@ -449,7 +456,7 @@ for frame in range(1, env.NUM_OF_FRAME+1):
 
     # Compute reward
     # reward = update_reward(state, action, reward,number_of_send_packet, number_of_received_packet, frame)
-    reward_value = compute_reward(state,number_of_send_packet,number_of_received_packet,reward_value,frame)
+    reward_value, reward_risk = compute_reward(state,number_of_send_packet,number_of_received_packet,reward_value,frame)
     reward_plot.append(reward_value)
     next_state = update_state(state, packet_loss_rate, number_of_received_packet)
 
@@ -461,7 +468,7 @@ for frame in range(1, env.NUM_OF_FRAME+1):
         if (J[i] == 1):
             V[i] = update_V(V[i],state,action)
             alpha[i] = update_alpha(alpha[i], V[i],state,action)
-            Q_tables[i] = update_Q_table(Q_tables[i], alpha[i], reward_value, state, action, next_state)
+            Q_tables[i] = update_Q_table(Q_tables[i], alpha[i], reward_risk, state, action, next_state)
         if(not (next_state_tuple in Q_tables[i])):
             add_new_state_to_table(Q_tables[i], next_state_tuple)
     state = next_state
