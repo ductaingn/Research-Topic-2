@@ -272,7 +272,6 @@ def add_new_state_to_table(table, state):
         table.update({state:actions})
     return table
 
-COUNT = 0
 def update_Q_table(Q_table, alpha, reward, state, action, next_state):
     state = tuple([tuple(row) for row in state])
     action = tuple(action)
@@ -283,12 +282,7 @@ def update_Q_table(Q_table, alpha, reward, state, action, next_state):
     for a in Q_table[state]:
         if(Q_table[state][a]>max_Q):
             max_Q = Q_table[state][a]
-    if(Q_table[state][action]!=0):
-        global COUNT
-        COUNT-=1
     Q_table[state][action] =  Q_table[state][action] + alpha[state][action] * (u(reward + GAMMA * max_Q - Q_table[state][action]) - X0)
-    if(Q_table[state][action]!=0):
-        COUNT+=1
     return Q_table
 
 
@@ -485,7 +479,6 @@ IO.save(Q_tables,'Q_tables')
 IO.save(reward,'all_reward')
 IO.save(packet_loss_rate_plot,'packet_loss_rate')
 IO.save(rate_plot,'rate')
-print(COUNT)
 Plot.plot_reward()
 Plot.plot_interface_usage()
 Plot.plot_sum_rate()
