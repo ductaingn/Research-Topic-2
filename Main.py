@@ -167,22 +167,6 @@ def compute_packet_loss_rate(frame_num, old_packet_loss_rate, received_packet_nu
 
 
 # CREATE REWARD
-# Initialize a reward table as a dictionary,
-def initialize_reward(state, action):
-    reward = {}
-    return reward
-
-# Update reward table
-def update_reward(state, action, old_reward_table, num_of_send_packet, num_of_received_packet, frame_num):
-    state_action = np.insert(state, 4, action, axis=1)
-    state_action = tuple([tuple(row) for row in state_action])
-    old_reward_value = 0
-    if(state_action in old_reward_table):
-        old_reward_value = old_reward_table[state_action]
-    reward = compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward_value, frame_num)
-    old_reward_table.update({state_action: reward})
-    return old_reward_table
-
 # Compute reward of one pair of (state, action)
 def compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward_value, frame_num):
     sum = 0
@@ -193,12 +177,12 @@ def compute_reward(state, num_of_send_packet, num_of_received_packet, old_reward
             num_of_send_packet[k, 0] + num_of_send_packet[k, 1]) - (1 - state_k[0]) - (1-state_k[1])
         risk_sub=risk_mW=0
         if(state_k[0]==0 and number_of_send_packet[k,0]>0):
-            risk_sub = -env.NUM_OF_DEVICE
+            risk_sub = env.NUM_OF_DEVICE
         if(state_k[1]==0 and number_of_send_packet[k,1]>0):
-            risk_mW = -env.NUM_OF_DEVICE
+            risk_mW = env.NUM_OF_DEVICE
         risk+= risk_sub+risk_mW
     sum = ((frame_num - 1)*old_reward_value + sum)/frame_num
-    return [sum, sum + risk]
+    return [sum, sum - risk]
 
 
 # CREATE MODEL
@@ -394,8 +378,7 @@ def compute_l_max(r):
 device_positions = env.initialize_devices_pos()
 state = initialize_state()
 action = initialize_action()
-reward = initialize_reward(state, action)
-reward_value = 0
+reward_first_sum = 0
 allocation = allocate(action)
 Q_tables = initialize_Q_tables(state)
 V = initialize_V(state)
@@ -456,8 +439,8 @@ for frame in range(1, env.NUM_OF_FRAME+1):
 
     # Compute reward
     # reward = update_reward(state, action, reward,number_of_send_packet, number_of_received_packet, frame)
-    reward_value, reward_risk = compute_reward(state,number_of_send_packet,number_of_received_packet,reward_value,frame)
-    reward_plot.append(reward_value)
+    reward_first_sum, reward_risk = compute_reward(state,number_of_send_packet,number_of_received_packet,reward_first_sum,frame)
+    reward_plot.append(reward_first_sum)
     next_state = update_state(state, packet_loss_rate, number_of_received_packet)
 
     # Generate mask J
@@ -483,7 +466,6 @@ IO.save(state_plot,'state')
 IO.save(h_tilde,'h_tilde')
 IO.save(device_positions,'device_positions')
 IO.save(Q_tables,'Q_tables')
-IO.save(reward,'all_reward')
 IO.save(packet_loss_rate_plot,'packet_loss_rate')
 IO.save(rate_plot,'rate')
 Plot.plot_reward()
